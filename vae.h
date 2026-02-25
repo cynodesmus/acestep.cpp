@@ -29,7 +29,7 @@ struct VAEResUnit {
 
 struct VAEBlock {
     struct ggml_tensor * sa, * sb;     // snake exp(a/b) [1, in_ch]
-    struct ggml_tensor * ctw, * ctb;   // conv_transpose [IC, K*OC] pre-permuted, bias [out_ch]
+    struct ggml_tensor * ctw, * ctb;   // conv_transpose F16 [IC, K*OC] pre-permuted, bias [out_ch]
     int in_ch, out_ch, stride, kernel;
     VAEResUnit ru[3];
 };
@@ -118,7 +118,13 @@ static void vae_fuse_wn_ct(struct ggml_tensor * dst, const GGUFModel & gf, const
             w[i * dim0 + d] = vv * s;     // transposed: [k_oc * IC + ic]
         }
     }
-    ggml_backend_tensor_set(dst, w.data(), 0, w.size() * sizeof(float));
+    if (dst->type == GGML_TYPE_F16) {
+        std::vector<ggml_fp16_t> w16(w.size());
+        ggml_fp32_to_fp16_row(w.data(), w16.data(), (int)w.size());
+        ggml_backend_tensor_set(dst, w16.data(), 0, w16.size() * sizeof(ggml_fp16_t));
+    } else {
+        ggml_backend_tensor_set(dst, w.data(), 0, w.size() * sizeof(float));
+    }
 }
 
 // Load bf16 snake param [1,C,1] -> exp -> f32 [1, C]
@@ -185,7 +191,7 @@ static void vae_ggml_load(VAEGGML * m, const char * path) {
         int C    = out_ch[i];
         b.sa  = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 1, in_ch[i]);
         b.sb  = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 1, in_ch[i]);
-        b.ctw = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, in_ch[i], b.kernel * out_ch[i]);
+        b.ctw = ggml_new_tensor_2d(ctx, GGML_TYPE_F16, in_ch[i], b.kernel * out_ch[i]);
         b.ctb = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, out_ch[i]);
         for (int r = 0; r < 3; r++) {
             VAEResUnit & ru = b.ru[r];
