@@ -1,7 +1,7 @@
 # acestep.cpp
 
 Portable C++17 implementation of ACE-Step 1.5 music generation using GGML.
-Text + lyrics in, stereo 48kHz WAV out. Runs on CPU, CUDA, Metal, Vulkan.
+Text + lyrics in, stereo 48kHz WAV out. Runs on CPU, CUDA, ROCm, Metal, Vulkan.
 
 ## Build
 
@@ -15,6 +15,9 @@ cmake ..
 
 # Linux with NVIDIA GPU
 cmake .. -DGGML_CUDA=ON
+
+# Linux with AMD GPU (ROCm)
+cmake .. -DGGML_HIP=ON
 
 # Linux with Vulkan
 cmake .. -DGGML_VULKAN=ON
@@ -318,7 +321,7 @@ python3 debug-dit-cossim.py       # DiT: per-layer cossim GGML vs Python (turbo/
 ## Patched GGML fork
 
 Uses a patched GGML fork (submodule) with two new ops, a Metal im2col optimization, and
-a CUDA bugfix for the Oobleck VAE decoder. All backends: CPU, CUDA, Metal, Vulkan.
+a CUDA bugfix for the Oobleck VAE decoder. All backends: CPU, CUDA, ROCm, Metal, Vulkan.
 F32/F16/BF16 data types. The DiT uses only standard GGML ops and needs no patches.
 
 The VAE reconstructs audio from latent space through 5 upsampling blocks (total 1920x),
