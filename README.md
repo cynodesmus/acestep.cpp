@@ -525,3 +525,15 @@ All model weights are theirs, this is just a native backend.
 	note={GitHub repository}
 }
 ```
+
+## Samples
+
+https://github.com/user-attachments/assets/9a50c1f4-9ec0-474a-bd14-e8c6b00622a1
+
+https://github.com/user-attachments/assets/fb606249-0269-4153-b651-bf78e05baf22
+
+https://github.com/user-attachments/assets/e0580468-5e33-4a1f-a0f4-b914e4b9a8c2
+
+https://github.com/user-attachments/assets/292a31f1-f97e-4060-9207-ed8364d9a794
+
+https://github.com/user-attachments/assets/34b1b781-a5bc-46c4-90a6-615a10bc2c6a
