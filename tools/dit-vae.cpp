@@ -355,10 +355,9 @@ int main(int argc, char ** argv) {
         //   text2music = "Fill the audio semantic mask..."
         //   cover      = "Generate audio semantic tokens..."
         // Auto-switches to cover when audio_codes are present
-        bool is_cover = have_cover || !codes_vec.empty();
-        const char * instruction = is_cover
-            ? "Generate audio semantic tokens based on the given conditions:"
-            : "Fill the audio semantic mask based on the given conditions:";
+        bool         is_cover    = have_cover || !codes_vec.empty();
+        const char * instruction = is_cover ? "Generate audio semantic tokens based on the given conditions:" :
+                                              "Fill the audio semantic mask based on the given conditions:";
         char         metas[512];
         snprintf(metas, sizeof(metas), "- bpm: %s\n- timesignature: %s\n- keyscale: %s\n- duration: %d seconds\n", bpm,
                  timesig, keyscale, (int) duration);
