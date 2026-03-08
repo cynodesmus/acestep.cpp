@@ -136,15 +136,19 @@ static int mp3enc_get_padding(mp3enc_t * enc) {
 // Returns number of bytes written to enc->out_buf.
 static int mp3enc_encode_frame(mp3enc_t * enc, const float * pcm) {
     int nch     = enc->channels;
-    int mode    = (nch == 1) ? 3 : 0;  // 3=mono, 0=stereo
     int padding = mp3enc_get_padding(enc);
+
+    // Use MS stereo for stereo input (joint stereo mode)
+    // mode=1 (joint), mode_ext=2 (MS on, intensity off)
+    int mode     = (nch == 1) ? 3 : 1;
+    int mode_ext = (nch == 1) ? 0 : 2;
 
     // Setup header
     mp3enc_header hdr;
     hdr.bitrate_kbps = enc->bitrate_kbps;
     hdr.samplerate   = enc->sample_rate;
     hdr.mode         = mode;
-    hdr.mode_ext     = 0;
+    hdr.mode_ext     = mode_ext;
     hdr.padding      = padding;
 
     int frame_bytes     = hdr.frame_bytes();
@@ -164,11 +168,12 @@ static int mp3enc_encode_frame(mp3enc_t * enc, const float * pcm) {
     si.main_data_begin = 0;  // no bit reservoir in phase 1
 
     int   ix[2][2][576];     // [granule][channel][line]
-    float mdct[576];
+    float mdct_lr[2][576];   // MDCT output per channel before M/S transform
 
     for (int gr = 0; gr < 2; gr++) {
         int pcm_offset = gr * 576;  // offset into 1152 sample block
 
+        // Step 1: filterbank + MDCT for all channels
         for (int ch = 0; ch < nch; ch++) {
             const float * ch_pcm = pcm + ch * 1152 + pcm_offset;
 
@@ -190,13 +195,29 @@ static int mp3enc_encode_frame(mp3enc_t * enc, const float * pcm) {
             }
 
             // MDCT: transform subbands to 576 frequency lines
-            mp3enc_mdct_granule(enc->sb_prev[ch], enc->sb_cur[ch], mdct);
-
-            // Quantize: inner loop finds global_gain to fit bit budget
-            mp3enc_inner_loop(mdct, ix[gr][ch], si.gr[gr][ch], bits_per_gr_ch, sfb, enc->sr_index);
+            mp3enc_mdct_granule(enc->sb_prev[ch], enc->sb_cur[ch], mdct_lr[ch]);
 
             // Save current subbands as previous for next granule
             memcpy(enc->sb_prev[ch], enc->sb_cur[ch], sizeof(enc->sb_cur[ch]));
+        }
+
+        // Step 2: MS stereo transform (after MDCT, before quantization)
+        // M = (L+R)/sqrt(2), S = (L-R)/sqrt(2)
+        // The 1/sqrt(2) compensates for the decoder's gain_exp -2 adjustment
+        // combined with the L=M+S, R=M-S reconstruction.
+        if (nch == 2) {
+            static const float ms_scale = 0.7071067811865476f;  // 1/sqrt(2)
+            for (int i = 0; i < 576; i++) {
+                float l       = mdct_lr[0][i];
+                float r       = mdct_lr[1][i];
+                mdct_lr[0][i] = (l + r) * ms_scale;  // Mid
+                mdct_lr[1][i] = (l - r) * ms_scale;  // Side
+            }
+        }
+
+        // Step 3: quantize each channel (now M/S instead of L/R)
+        for (int ch = 0; ch < nch; ch++) {
+            mp3enc_inner_loop(mdct_lr[ch], ix[gr][ch], si.gr[gr][ch], bits_per_gr_ch, sfb, enc->sr_index);
         }
     }
 
