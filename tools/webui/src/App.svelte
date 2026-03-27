@@ -92,6 +92,7 @@
 		--color-off: #555;
 		--waveform-dim: #555;
 		--waveform-play: #2ed573;
+		--waveform-range: #ff6b6b;
 		color-scheme: dark;
 	}
 	:global(:root.light) {
@@ -111,6 +112,7 @@
 		--color-off: #bbb;
 		--waveform-dim: #ccc;
 		--waveform-play: #27ae60;
+		--waveform-range: #e74c3c;
 		color-scheme: light;
 	}
 	:global(*, *::before, *::after) {

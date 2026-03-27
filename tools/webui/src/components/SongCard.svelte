@@ -10,11 +10,19 @@
 	let playing = $state(false);
 	let time = $state(0);
 	let dur = $state(0);
+	let rangeStart = $state(-1);
+	let rangeEnd = $state(-1);
 
 	let isRef = $derived(app.refSongId === song.id);
 
 	function toggleRef() {
-		app.refSongId = isRef ? null : (song.id ?? null);
+		if (isRef) {
+			app.refSongId = null;
+			rangeStart = -1;
+			rangeEnd = -1;
+		} else {
+			app.refSongId = song.id ?? null;
+		}
 	}
 
 	function toggle() {
@@ -96,7 +104,15 @@
 			<button class="icon-btn" onclick={remove} title="Delete"><Trash2 size={14} /></button>
 		</div>
 	</div>
-	<Waveform audio={song.audio} bind:playing bind:time bind:dur />
+	<Waveform
+		audio={song.audio}
+		bind:playing
+		bind:time
+		bind:dur
+		selectable={isRef}
+		bind:rangeStart
+		bind:rangeEnd
+	/>
 </div>
 
 <style>

@@ -8,62 +8,69 @@
 		audio,
 		playing = $bindable(false),
 		time = $bindable(0),
-		dur = $bindable(0)
-	}: { audio: Blob; playing: boolean; time: number; dur: number } = $props();
+		dur = $bindable(0),
+		selectable = false,
+		rangeStart = $bindable(-1),
+		rangeEnd = $bindable(-1)
+	}: {
+		audio: Blob;
+		playing: boolean;
+		time: number;
+		dur: number;
+		selectable: boolean;
+		rangeStart: number;
+		rangeEnd: number;
+	} = $props();
 
 	let canvas: HTMLCanvasElement;
 	let peaks: number[] = [];
-	let player: HTMLAudioElement | null = null;
-	let url: string | null = null;
 	let raf = 0;
-	let dragging = false;
-	let lastSeek = -1;
 	let cw = 0;
 	let ch = 0;
 
-	// one-time setup: decode audio blob, compute peaks, create player element.
+	// Web Audio API
+	let actx: AudioContext | null = null;
+	let gain: GainNode | null = null;
+	let decoded: AudioBuffer | null = null;
+	let source: AudioBufferSourceNode | null = null;
+	let playAt = 0;
+	let playOffset = 0;
+
+	// pointer state
+	let dragging = false;
+	let dragEdge: 'lo' | 'hi' | 'new' = 'new';
+	let anchor = -1;
+
 	onMount(() => {
 		cw = canvas.clientWidth || 300;
 		ch = WAVEFORM_HEIGHT;
 		canvas.width = cw;
 		canvas.height = ch;
 
-		url = URL.createObjectURL(audio);
-		player = new Audio(url);
-		player.volume = untrack(() => app.volume);
-		player.addEventListener('ended', () => {
-			playing = false;
-			time = 0;
-			draw(0);
-		});
-		player.addEventListener('loadedmetadata', () => {
-			dur = player!.duration;
-		});
+		actx = new AudioContext();
+		gain = actx.createGain();
+		gain.gain.value = untrack(() => app.volume);
+		gain.connect(actx.destination);
 
-		const actx = new AudioContext();
 		audio
 			.arrayBuffer()
-			.then((buf) => actx.decodeAudioData(buf))
-			.then((decoded) => {
-				peaks = computePeaks(decoded, cw);
-				draw(0);
-				actx.close();
+			.then((buf) => actx!.decodeAudioData(buf))
+			.then((buf) => {
+				decoded = buf;
+				dur = buf.duration;
+				peaks = computePeaks(buf, cw);
+				draw();
 			})
 			.catch(() => {});
 
-		// touch events with passive:false so preventDefault stops Chromium from
-		// scrolling (it silently ignores preventDefault on default-passive handlers).
 		canvas.addEventListener('touchstart', preventTouch, { passive: false });
 		canvas.addEventListener('touchmove', preventTouch, { passive: false });
 
 		return () => {
-			if (player) {
-				player.pause();
-				player = null;
-			}
-			if (url) {
-				URL.revokeObjectURL(url);
-				url = null;
+			stopPlayback();
+			if (actx) {
+				actx.close();
+				actx = null;
 			}
 			cancelLoop();
 			canvas.removeEventListener('touchstart', preventTouch);
@@ -75,26 +82,25 @@
 		e.preventDefault();
 	}
 
-	// redraw idle waveforms when the theme changes
+	// redraw when theme or selectable state changes
 	$effect(() => {
-		app.dark; // track toggle
+		app.dark;
+		selectable;
 		svelteTick().then(() => {
-			if (peaks.length > 0 && player) {
-				draw(dur > 0 ? player.currentTime / dur : 0);
-			}
+			if (peaks.length > 0) draw();
 		});
 	});
 
-	// play/pause toggle (driven by SongCard button via bind:playing)
+	// play/pause
 	$effect(() => {
 		const wantPlay = playing;
-		if (!player) return;
+		if (!decoded || !actx) return;
 		if (wantPlay) {
-			player.volume = untrack(() => app.volume);
-			player.play().catch(() => {});
+			if (actx.state === 'suspended') actx.resume();
+			startPlayback(untrack(() => time));
 			startLoop();
 		} else {
-			player.pause();
+			stopPlayback();
 			cancelLoop();
 		}
 	});
@@ -116,9 +122,44 @@
 		return out;
 	}
 
-	// draw waveform with playback progress (0..1).
-	// reads CSS colors fresh on every call (live dark/light theme support).
-	function draw(progress: number) {
+	function currentTime(): number {
+		if (!actx || !source) return time;
+		return playOffset + (actx.currentTime - playAt);
+	}
+
+	function startPlayback(offset: number) {
+		stopPlayback();
+		if (!actx || !decoded || !gain) return;
+		const s = actx.createBufferSource();
+		s.buffer = decoded;
+		s.connect(gain);
+		s.onended = () => {
+			if (source === s) {
+				source = null;
+				playing = false;
+				time = 0;
+				draw();
+			}
+		};
+		playOffset = offset;
+		playAt = actx.currentTime;
+		s.start(0, offset);
+		source = s;
+	}
+
+	function stopPlayback() {
+		if (source) {
+			source.onended = null;
+			try {
+				source.stop();
+			} catch {}
+			source = null;
+		}
+	}
+
+	// draw: red (range) > green (played) > gray
+	// cursors: red at range edges, green at playhead (on top)
+	function draw() {
 		if (!canvas || peaks.length === 0) return;
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return;
@@ -126,17 +167,35 @@
 		const style = getComputedStyle(canvas);
 		const colorDim = style.getPropertyValue('--waveform-dim').trim() || '#555';
 		const colorPlay = style.getPropertyValue('--waveform-play').trim() || '#2ed573';
+		const colorRange = style.getPropertyValue('--waveform-range').trim() || '#ff6b6b';
 
+		const progress = dur > 0 ? currentTime() / dur : 0;
 		const mid = ch / 2;
 		const barW = cw / peaks.length;
+		const hasRange = rangeStart >= 0 && rangeEnd > rangeStart && dur > 0;
+		const rA = hasRange ? rangeStart / dur : 0;
+		const rB = hasRange ? rangeEnd / dur : 0;
 
 		ctx.clearRect(0, 0, cw, ch);
 
 		for (let i = 0; i < peaks.length; i++) {
+			const frac = i / peaks.length;
 			const x = i * barW;
 			const barH = peaks[i] * mid * 0.9;
-			ctx.fillStyle = i / peaks.length <= progress ? colorPlay : colorDim;
+			if (hasRange && frac >= rA && frac < rB) {
+				ctx.fillStyle = colorRange;
+			} else if (frac <= progress) {
+				ctx.fillStyle = colorPlay;
+			} else {
+				ctx.fillStyle = colorDim;
+			}
 			ctx.fillRect(x, mid - barH, Math.max(1, barW - 0.5), barH * 2);
+		}
+
+		if (hasRange) {
+			ctx.fillStyle = colorRange;
+			ctx.fillRect(rA * cw - 0.5, 0, 1, ch);
+			ctx.fillRect(rB * cw - 0.5, 0, 1, ch);
 		}
 
 		if (progress > 0 && progress < 1) {
@@ -145,13 +204,23 @@
 		}
 	}
 
-	// rAF loop: sync volume, update time, redraw waveform
+	// loop logic lives here: when playhead passes rangeEnd, restart at rangeStart
 	function tick() {
-		if (!player || player.paused) return;
-		player.volume = app.volume;
-		const t = player.currentTime;
-		time = t;
-		draw(dur > 0 ? t / dur : 0);
+		if (!source) return;
+		if (gain) gain.gain.value = app.volume;
+		const t = currentTime();
+		if (t >= dur) {
+			stopPlayback();
+			playing = false;
+			time = 0;
+			draw();
+			return;
+		}
+		if (rangeEnd > rangeStart && rangeStart >= 0 && t >= rangeEnd) {
+			startPlayback(rangeStart);
+		}
+		time = currentTime();
+		draw();
 		raf = requestAnimationFrame(tick);
 	}
 
@@ -167,28 +236,71 @@
 		}
 	}
 
-	// seek to x position on the canvas
-	function seekTo(clientX: number) {
-		if (!player || !canvas || dur <= 0) return;
+	function xToNorm(clientX: number): number {
+		if (!canvas) return 0;
 		const rect = canvas.getBoundingClientRect();
-		const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-		if (x === lastSeek) return;
-		lastSeek = x;
-		player.currentTime = x * dur;
-		time = player.currentTime;
-		draw(x);
+		return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+	}
+
+	function seekTo(norm: number) {
+		if (dur <= 0) return;
+		time = norm * dur;
+		if (source) startPlayback(time);
+		draw();
 	}
 
 	function onPointerDown(e: PointerEvent) {
 		dragging = true;
-		lastSeek = -1;
 		canvas.setPointerCapture(e.pointerId);
-		seekTo(e.clientX);
+		if (selectable) {
+			const pos = xToNorm(e.clientX);
+			const cur = pos * dur;
+			// snap closest edge to mouse, or start new range
+			if (rangeStart >= 0 && rangeEnd > rangeStart && dur > 0) {
+				const dLo = Math.abs(pos - rangeStart / dur);
+				const dHi = Math.abs(pos - rangeEnd / dur);
+				if (dLo <= dHi) {
+					dragEdge = 'lo';
+					rangeStart = cur;
+				} else {
+					dragEdge = 'hi';
+					rangeEnd = cur;
+				}
+			} else {
+				dragEdge = 'new';
+				anchor = pos;
+				rangeStart = cur;
+				rangeEnd = cur;
+			}
+			draw();
+		} else {
+			seekTo(xToNorm(e.clientX));
+		}
 	}
 
 	function onPointerMove(e: PointerEvent) {
 		if (!dragging) return;
-		seekTo(e.clientX);
+		if (selectable) {
+			const cur = xToNorm(e.clientX) * dur;
+			if (dragEdge === 'lo') {
+				rangeStart = cur;
+			} else if (dragEdge === 'hi') {
+				rangeEnd = cur;
+			} else {
+				rangeStart = Math.min(anchor * dur, cur);
+				rangeEnd = Math.max(anchor * dur, cur);
+			}
+			// swap edges when crossing
+			if (rangeStart > rangeEnd) {
+				const tmp = rangeStart;
+				rangeStart = rangeEnd;
+				rangeEnd = tmp;
+				dragEdge = dragEdge === 'lo' ? 'hi' : 'lo';
+			}
+			draw();
+		} else {
+			seekTo(xToNorm(e.clientX));
+		}
 	}
 
 	function onPointerUp() {
