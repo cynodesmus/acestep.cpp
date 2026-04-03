@@ -34,6 +34,12 @@
 	);
 	let singleTrack = $derived(taskType === TASK_LEGO || taskType === TASK_EXTRACT);
 
+	// DiT input indicators
+	let hasCodes = $derived(!!app.request.audio_codes?.trim());
+	let hasSrc = $derived(app.srcSongId != null);
+	let hasRange = $derived(app.srcRangeStart >= 0 && app.srcRangeEnd > app.srcRangeStart);
+	let hasRef = $derived(app.refSongId != null);
+
 	// track selection: radio for lego/extract, multi for complete
 	let selectedTracks: Set<string> = $state(new Set());
 
@@ -710,6 +716,14 @@
 		</label>
 	</div>
 
+	<div class="model-row">
+		<span class="row-label">Conditioning</span>
+		<span class="dit-ind" class:on={hasCodes}>LM codes</span>
+		<span class="dit-ind" class:on={hasSrc}>Src audio</span>
+		<span class="dit-ind" class:on={hasRange}>Range</span>
+		<span class="dit-ind" class:on={hasRef}>Timbre ref</span>
+	</div>
+
 	<button type="button" disabled={busy} onclick={synthesize}>Synthesize</button>
 </form>
 
@@ -851,6 +865,18 @@
 	}
 	button:disabled {
 		opacity: 0.4;
+	}
+	.dit-ind {
+		padding: 0.15rem 0.4rem;
+		border-radius: 4px;
+		font-size: 0.8rem;
+		background: var(--bg-err, #c0392b);
+		color: #fff;
+		opacity: 0.6;
+	}
+	.dit-ind.on {
+		background: var(--bg-ok, #27ae60);
+		opacity: 1;
 	}
 	.track-row {
 		align-items: flex-start;
