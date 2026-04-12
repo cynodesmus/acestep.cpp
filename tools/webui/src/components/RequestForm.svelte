@@ -549,6 +549,25 @@
 		}
 	}
 
+	function clearMetadata() {
+		app.request.vocal_language = '';
+		app.request.bpm = undefined;
+		app.request.duration = undefined;
+		app.request.keyscale = '';
+		app.request.timesignature = '';
+	}
+
+	function clearFlowMatching() {
+		app.request.inference_steps = undefined;
+		app.request.guidance_scale = undefined;
+		app.request.shift = undefined;
+		app.request.audio_cover_strength = undefined;
+		app.request.cover_noise_strength = undefined;
+		app.request.repaint_strength = undefined;
+		app.request.infer_method = '';
+		app.request.seed = undefined;
+	}
+
 	function ph(v: unknown): string {
 		return v != null ? String(v) : '';
 	}
@@ -645,6 +664,17 @@
 		bind:value={app.request.lyrics}
 	></textarea>
 
+	<div class="section-title metadata-header">
+		Metadata
+		<span
+			class="clear-link"
+			role="button"
+			tabindex="0"
+			title="Clear all metadata fields (LM will guess them)"
+			onclick={clearMetadata}
+			onkeydown={(e) => e.key === 'Enter' && clearMetadata()}>Clear</span
+		>
+	</div>
 	<div class="meta-grid">
 		<label
 			>Language <input
@@ -838,8 +868,16 @@
 		</div>
 	</details>
 
-	<details open>
+	<details open class="has-clear">
 		<summary>Flow matching parameters</summary>
+		<span
+			class="clear-link details-clear"
+			role="button"
+			tabindex="0"
+			title="Reset all flow matching parameters to auto-detect defaults"
+			onclick={clearFlowMatching}
+			onkeydown={(e) => e.key === 'Enter' && clearFlowMatching()}>Clear</span
+		>
 		<div class="details-body">
 			<div class="meta-grid">
 				<label
@@ -910,6 +948,7 @@
 			min="1"
 			max="9"
 			bind:value={app.request.synth_batch_size}
+			title="Number of DiT variations per request. Each uses a consecutive seed."
 		/>
 		<span class="spacer"></span>
 		<span class="row-label">Peak clip</span>
@@ -919,6 +958,7 @@
 			min="0"
 			max="999"
 			bind:value={app.request.peak_clip}
+			title="Percentile peak normalization to 0 dB. 0 = no clipping (100th percentile). 10 = default (99.999%, clips ~58 samples / 1.2 ms). 999 = aggressive (99.9%, clips ~5760 samples / 120 ms)."
 		/>
 		<label class="radio-label">
 			<input type="radio" name="format" value="mp3" bind:group={app.format} /> MP3
@@ -1002,6 +1042,28 @@
 	}
 	.instrumental-toggle input[type='checkbox'] {
 		cursor: pointer;
+	}
+	.metadata-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.has-clear {
+		position: relative;
+	}
+	.details-clear {
+		position: absolute;
+		top: 0.4rem;
+		right: 0;
+	}
+	.clear-link {
+		font-size: 0.8rem;
+		font-weight: 400;
+		color: var(--fg-dim);
+		cursor: pointer;
+	}
+	.clear-link:hover {
+		color: var(--fg);
 	}
 	textarea,
 	input[type='text'],
