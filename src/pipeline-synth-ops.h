@@ -34,7 +34,8 @@ struct SynthState {
 
     // src audio encoding
     bool               have_cover;
-    std::vector<float> cover_latents;  // [T_cover * 64] time-major VAE latents
+    std::vector<float> cover_latents;        // [T_cover * 64] time-major VAE latents
+    std::vector<float> noise_blend_latents;  // clean VAE latents for cover_noise_strength blending
     int                T_cover;
 
     // mode flags

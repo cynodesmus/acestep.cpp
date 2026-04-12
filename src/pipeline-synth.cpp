@@ -303,8 +303,12 @@ int ace_synth_generate(AceSynth *         ctx,
             s.use_source_context = false;
             s.instruction_str    = DIT_INSTR_TEXT2MUSIC;
         } else if (s.task == TASK_COVER) {
-            s.use_source_context = true;
-            s.instruction_str    = DIT_INSTR_COVER;
+            s.use_source_context  = true;
+            s.instruction_str     = DIT_INSTR_COVER;
+            // save clean VAE latents before FSQ degrades them.
+            // the FSQ roundtrip only affects context conditioning;
+            // cover_noise_strength blending needs the original clean latents.
+            s.noise_blend_latents = s.cover_latents;
             ops_fsq_roundtrip(ctx, s);  // FSQ degrades source latents, DiT diverges from original
         } else if (s.task == TASK_COVER_NOFSQ) {
             // cover without FSQ roundtrip: DiT works on clean VAE latents at 25Hz.

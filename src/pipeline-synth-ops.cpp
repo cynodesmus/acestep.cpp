@@ -594,13 +594,17 @@ void ops_init_noise_and_repaint(AceSynth * ctx, const AceRequest * reqs, int bat
                 s.Oc, s.use_sde ? " (SDE)" : "");
     }
 
-    // cover_noise_strength: blend initial s.noise with source latents.
-    // xt = nearest_t * s.noise + (1 - nearest_t) * s.cover_latents, then truncate s.schedule.
+    // cover_noise_strength: blend initial noise with clean source latents.
+    // xt = nearest_t * noise + (1 - nearest_t) * clean_latents, then truncate schedule.
+    // the FSQ roundtrip degrades cover_latents for context conditioning, but noise
+    // blending needs the original clean VAE latents. noise_blend_latents holds the
+    // clean copy when FSQ was applied; otherwise fall back to cover_latents (already clean).
     if (s.use_source_context && s.have_cover && s.rr.cover_noise_strength > 0.0f) {
-        float effective_noise_level = 1.0f - s.rr.cover_noise_strength;
+        const std::vector<float> & blend_src = s.noise_blend_latents.empty() ? s.cover_latents : s.noise_blend_latents;
+        float                      effective_noise_level = 1.0f - s.rr.cover_noise_strength;
         // find nearest timestep in s.schedule
-        int   start_idx             = 0;
-        float best_dist             = fabsf(s.schedule[0] - effective_noise_level);
+        int                        start_idx             = 0;
+        float                      best_dist             = fabsf(s.schedule[0] - effective_noise_level);
         for (int i = 1; i < s.num_steps; i++) {
             float dist = fabsf(s.schedule[i] - effective_noise_level);
             if (dist < best_dist) {
@@ -609,12 +613,12 @@ void ops_init_noise_and_repaint(AceSynth * ctx, const AceRequest * reqs, int bat
             }
         }
         float nearest_t = s.schedule[start_idx];
-        // blend: xt = nearest_t * s.noise + (1 - nearest_t) * s.cover_latents
+        // blend: xt = nearest_t * s.noise + (1 - nearest_t) * clean_latents
         for (int b = 0; b < batch_n; b++) {
             float * n = s.noise.data() + b * s.Oc * s.T;
             for (int t = 0; t < s.T; t++) {
                 int           t_src = t < s.T_cover ? t : s.T_cover - 1;
-                const float * src   = s.cover_latents.data() + t_src * s.Oc;
+                const float * src   = blend_src.data() + t_src * s.Oc;
                 for (int c = 0; c < s.Oc; c++) {
                     int idx = t * s.Oc + c;
                     n[idx]  = nearest_t * n[idx] + (1.0f - nearest_t) * src[c];
